@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agar.io Clone - Multiplayer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: #111;
+            font-family: 'Arial', sans-serif;
+        }
+        canvas {
+            display: block;
+            background: #1a1a1a;
+        }
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        #startScreen.hidden {
+            display: none;
+        }
+        #startScreen h1 {
+            color: #fff;
+            font-size: 60px;
+            margin-bottom: 30px;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        }
+        #nameInput {
+            padding: 15px 25px;
+            font-size: 20px;
+            border: 3px solid #4CAF50;
+            border-radius: 10px;
+            background: #222;
+            color: #fff;
+            margin-bottom: 20px;
+            width: 300px;
+            text-align: center;
+        }
+        #playBtn {
+            padding: 15px 50px;
+            font-size: 24px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        #playBtn:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px black;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 15px;
+            border-radius: 8px;
+        }
+        #leaderboard {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            min-width: 200px;
+        }
+        #leaderboard h3 {
+            margin-bottom: 10px;
+            text-align: center;
+            color: #4CAF50;
+        }
+        .leaderboard-item {
+            padding: 5px;
+            margin: 3px 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .leaderboard-item.me {
+            background: rgba(76, 175, 80, 0.3);
+            border: 1px solid #4CAF50;
+        }
+        #respawnBtn {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 24px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            display: none;
+            z-index: 50;
+        }
+        #respawnBtn:hover {
+            background: #da190b;
+        }
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="startScreen">
+        <h1>🎮 Agar.io Clone</h1>
+        <input type="text" id="nameInput" placeholder="İsmini gir" maxlength="15" />
+        <button id="playBtn">OYNA</button>
+    </div>
+    <canvas id="canvas"></canvas>
+    <div id="info">
+        Boyut: <span id="size">0</span><br />
+        Oyuncu: <span id="playerCount">0</span>
+    </div>
+    <div id="leaderboard">
+        <h3>🏆 Liderler</h3>
+        <div id="leaderboardList"></div>
+    </div>
+    <button id="respawnBtn">Tekrar Oyna</button>
+    <div id="instructions">
+        Fare ile hareket et • Yemekleri topla • Küçük oyuncuları ye
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const socket = io();
+        let myId, worldSize;
+        let players = {}, food = [];
+        let camera = { x: 1000, y: 1000 };
+        let isAlive = false;
+        let mousePos = { x: 0, y: 0 };
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        document.getElementById('playBtn').addEventListener('click', () => {
+            const name = document.getElementById('nameInput').value.trim() || 'Oyuncu';
+            socket.emit('spawn', { name });
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('instructions').style.display = 'none';
+            isAlive = true;
+        });
+
+        document.getElementById('respawnBtn').addEventListener('click', () => {
+            const name = document.getElementById('nameInput').value.trim() || 'Oyuncu';
+            socket.emit('spawn', { name });
+            document.getElementById('respawnBtn').style.display = 'none';
+            isAlive = true;
+        });
+
+        document.getElementById('nameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('playBtn').click();
+            }
+        });
+
+        socket.on('init', (data) => {
+            myId = data.id;
+            worldSize = data.worldSize;
+        });
+
+        socket.on('state', (data) => {
+            players = data.players;
+            food = data.food;
+            document.getElementById('playerCount').textContent = Object.keys(players).length;
+            updateLeaderboard();
+        });
+
+        socket.on('dead', () => {
+            isAlive = false;
+            document.getElementById('respawnBtn').style.display = 'block';
+        });
+
+        function updateMousePos(x, y) {
+            mousePos.x = x;
+            mousePos.y = y;
+            if (myId && players[myId] && isAlive) {
+                socket.emit('move', {
+                    x: x + camera.x - canvas.width / 2,
+                    y: y + camera.y - canvas.height / 2
+                });
+            }
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            updateMousePos(e.clientX, e.clientY);
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            updateMousePos(touch.clientX, touch.clientY);
+        });
+
+        function updateLeaderboard() {
+            const sorted = Object.entries(players)
+                .map(([id, p]) => ({ id, name: p.name, size: Math.floor(p.size) }))
+                .sort((a, b) => b.size - a.size)
+                .slice(0, 10);
+
+            const list = document.getElementById('leaderboardList');
+            list.innerHTML = sorted.map((p, i) => 
+                `<div class="leaderboard-item ${p.id === myId ? 'me' : ''}">
+                    <span>${i + 1}. ${p.name}</span>
+                    <span>${p.size}</span>
+                </div>`
+            ).join('');
+        }
+
+        function draw() {
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (myId && players[myId] && isAlive) {
+                const player = players[myId];
+                camera.x += (player.x - camera.x) * 0.1;
+                camera.y += (player.y - camera.y) * 0.1;
+                document.getElementById('size').textContent = Math.floor(player.size);
+
+                // Grid
+                ctx.strokeStyle = '#2a2a2a';
+                ctx.lineWidth = 1;
+                const gridSize = 50;
+                for (let x = -camera.x % gridSize; x < canvas.width; x += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, canvas.height);
+                    ctx.stroke();
+                }
+                for (let y = -camera.y % gridSize; y < canvas.height; y += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(canvas.width, y);
+                    ctx.stroke();
+                }
+
+                // Yemek
+                food.forEach(f => {
+                    const sx = f.x - camera.x + canvas.width / 2;
+                    const sy = f.y - camera.y + canvas.height / 2;
+                    
+                    ctx.fillStyle = f.color;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                });
+
+                // Oyuncuları boyuta göre sırala
+                const sortedPlayers = Object.entries(players).sort((a, b) => a[1].size - b[1].size);
+
+                sortedPlayers.forEach(([id, p]) => {
+                    const sx = p.x - camera.x + canvas.width / 2;
+                    const sy = p.y - camera.y + canvas.height / 2;
+
+                    // Gölge efekti
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = p.color;
+                    
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.shadowBlur = 0;
+                    
+                    // Kenarlık
+                    ctx.strokeStyle = id === myId ? '#fff' : 'rgba(255,255,255,0.3)';
+                    ctx.lineWidth = id === myId ? 4 : 2;
+                    ctx.stroke();
+
+                    // İsim ve boyut
+                    const fontSize = Math.max(12, p.size / 3);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = `bold ${fontSize}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 3;
+                    ctx.strokeText(p.name, sx, sy);
+                    ctx.fillText(p.name, sx, sy);
+                    
+                    ctx.font = `${fontSize * 0.7}px Arial`;
+                    ctx.strokeText(Math.floor(p.size), sx, sy + fontSize);
+                    ctx.fillText(Math.floor(p.size), sx, sy + fontSize);
+                });
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+    </script>
+</body>
+</html>
