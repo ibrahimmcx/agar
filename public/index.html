@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,15 +11,20 @@
             padding: 0;
             box-sizing: border-box;
         }
+
         body {
             overflow: hidden;
             background: #111;
             font-family: 'Arial', sans-serif;
         }
+
         canvas {
             display: block;
             background: #1a1a1a;
+            outline: none;
+            cursor: crosshair;
         }
+
         #startScreen {
             position: absolute;
             top: 0;
@@ -32,15 +38,18 @@
             justify-content: center;
             z-index: 100;
         }
+
         #startScreen.hidden {
             display: none;
         }
+
         #startScreen h1 {
             color: #fff;
             font-size: 60px;
             margin-bottom: 30px;
             text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
         }
+
         #nameInput {
             padding: 15px 25px;
             font-size: 20px;
@@ -52,6 +61,7 @@
             width: 300px;
             text-align: center;
         }
+
         #playBtn {
             padding: 15px 50px;
             font-size: 24px;
@@ -62,10 +72,12 @@
             cursor: pointer;
             transition: all 0.3s;
         }
+
         #playBtn:hover {
             background: #45a049;
             transform: scale(1.05);
         }
+
         #info {
             position: absolute;
             top: 10px;
@@ -77,6 +89,7 @@
             padding: 10px 15px;
             border-radius: 8px;
         }
+
         #leaderboard {
             position: absolute;
             top: 10px;
@@ -87,11 +100,13 @@
             color: white;
             min-width: 200px;
         }
+
         #leaderboard h3 {
             margin-bottom: 10px;
             text-align: center;
             color: #4CAF50;
         }
+
         .leaderboard-item {
             padding: 5px;
             margin: 3px 0;
@@ -100,10 +115,12 @@
             display: flex;
             justify-content: space-between;
         }
+
         .leaderboard-item.me {
             background: rgba(76, 175, 80, 0.3);
             border: 1px solid #4CAF50;
         }
+
         #respawnBtn {
             position: absolute;
             top: 50%;
@@ -119,9 +136,11 @@
             display: none;
             z-index: 50;
         }
+
         #respawnBtn:hover {
             background: #da190b;
         }
+
         #instructions {
             position: absolute;
             bottom: 10px;
@@ -134,8 +153,20 @@
             border-radius: 8px;
             font-size: 14px;
         }
+
+        #fps {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: #4CAF50;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
     </style>
 </head>
+
 <body>
     <div id="startScreen">
         <h1>🎮 Agar.io Clone</h1>
@@ -153,14 +184,17 @@
     </div>
     <button id="respawnBtn">Tekrar Oyna</button>
     <div id="instructions">
-        Fare ile hareket et • Yemekleri topla • Küçük oyuncuları ye
+        Fare: Hareket • W: Yem ver • Space: Bölün
     </div>
+    <div id="fps">FPS: 60</div>
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        canvas.tabIndex = 1;
+        canvas.focus();
 
         const socket = io();
         let myId, worldSize;
@@ -168,6 +202,12 @@
         let camera = { x: 1000, y: 1000 };
         let isAlive = false;
         let mousePos = { x: 0, y: 0 };
+
+        // Klavye durumu
+        const keys = {
+            space: false,
+            w: false
+        };
 
         window.addEventListener('resize', () => {
             canvas.width = window.innerWidth;
@@ -180,6 +220,7 @@
             document.getElementById('startScreen').classList.add('hidden');
             document.getElementById('instructions').style.display = 'none';
             isAlive = true;
+            canvas.focus();
         });
 
         document.getElementById('respawnBtn').addEventListener('click', () => {
@@ -187,6 +228,7 @@
             socket.emit('spawn', { name });
             document.getElementById('respawnBtn').style.display = 'none';
             isAlive = true;
+            canvas.focus();
         });
 
         document.getElementById('nameInput').addEventListener('keypress', (e) => {
@@ -205,6 +247,11 @@
             food = data.food;
             document.getElementById('playerCount').textContent = Object.keys(players).length;
             updateLeaderboard();
+
+            // Debug - her 5 saniyede bir
+            if (Math.random() < 0.01) {
+                console.log('Player state:', myId, players[myId]);
+            }
         });
 
         socket.on('dead', () => {
@@ -233,6 +280,77 @@
             updateMousePos(touch.clientX, touch.clientY);
         });
 
+        canvas.addEventListener('click', () => {
+            canvas.focus();
+        });
+
+        // Klavye kontrolleri - HER İKİ YER İÇİN
+        let canSplit = true;
+        let wPressed = false;
+        let feedInterval = null;
+
+        function handleKeyDown(e) {
+            if (!isAlive) return;
+
+            console.log('Key DOWN:', e.key, e.code, e.keyCode);
+
+            // Space - Bölünme
+            if (e.code === 'Space' || e.keyCode === 32 || e.key === ' ') {
+                e.preventDefault();
+                if (canSplit && players[myId] && players[myId].size > 30) {
+                    console.log('🔴 SPLIT TRIGGERED! Size:', players[myId].size);
+                    socket.emit('split');
+                    canSplit = false;
+                    setTimeout(() => {
+                        canSplit = true;
+                    }, 1000);
+                } else {
+                    console.log('❌ Cannot split. Size:', players[myId]?.size, '(need > 30)', 'canSplit:', canSplit);
+                }
+            }
+
+            // W - Yem verme
+            if ((e.key === 'w' || e.key === 'W' || e.keyCode === 87) && !e.repeat) {
+                e.preventDefault();
+                if (!wPressed && players[myId] && players[myId].size > 22) {
+                    console.log('🟢 EJECT START! Size:', players[myId].size);
+                    wPressed = true;
+                    socket.emit('eject');
+
+                    feedInterval = setInterval(() => {
+                        if (isAlive && players[myId] && players[myId].size > 22) {
+                            socket.emit('eject');
+                        }
+                    }, 100);
+                } else {
+                    console.log('❌ Cannot eject. Size:', players[myId]?.size, '(need > 22)');
+                }
+            }
+        }
+
+        function handleKeyUp(e) {
+            console.log('Key UP:', e.key, e.code, e.keyCode);
+
+            if (e.key === 'w' || e.key === 'W' || e.keyCode === 87) {
+                console.log('🔵 EJECT STOP!');
+                wPressed = false;
+                if (feedInterval) {
+                    clearInterval(feedInterval);
+                    feedInterval = null;
+                }
+            }
+        }
+
+        // Hem window hem canvas için
+        window.addEventListener('keydown', handleKeyDown, true);
+        window.addEventListener('keyup', handleKeyUp, true);
+        canvas.addEventListener('keydown', handleKeyDown, true);
+        canvas.addEventListener('keyup', handleKeyUp, true);
+
+        // Test için - sayfa yüklendiğinde
+        console.log('🎮 Game loaded! Press Space or W to test');
+        console.log('isAlive:', isAlive, 'myId:', myId);
+
         function updateLeaderboard() {
             const sorted = Object.entries(players)
                 .map(([id, p]) => ({ id, name: p.name, size: Math.floor(p.size) }))
@@ -240,7 +358,7 @@
                 .slice(0, 10);
 
             const list = document.getElementById('leaderboardList');
-            list.innerHTML = sorted.map((p, i) => 
+            list.innerHTML = sorted.map((p, i) =>
                 `<div class="leaderboard-item ${p.id === myId ? 'me' : ''}">
                     <span>${i + 1}. ${p.name}</span>
                     <span>${p.size}</span>
@@ -248,7 +366,18 @@
             ).join('');
         }
 
+        // FPS Counter
+        let lastTime = performance.now();
+        let fps = 60;
+        let frameCount = 0;
+        setInterval(() => {
+            fps = frameCount;
+            frameCount = 0;
+            document.getElementById('fps').textContent = `FPS: ${fps}`;
+        }, 1000);
+
         function draw() {
+            frameCount++;
             ctx.fillStyle = '#1a1a1a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -275,58 +404,77 @@
                     ctx.stroke();
                 }
 
-                // Yemek
+                // Yemek (sadece görünür olanları çiz)
+                const viewPadding = 100;
                 food.forEach(f => {
                     const sx = f.x - camera.x + canvas.width / 2;
                     const sy = f.y - camera.y + canvas.height / 2;
-                    
-                    ctx.fillStyle = f.color;
-                    ctx.beginPath();
-                    ctx.arc(sx, sy, 6, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
+
+                    if (sx > -viewPadding && sx < canvas.width + viewPadding &&
+                        sy > -viewPadding && sy < canvas.height + viewPadding) {
+                        ctx.fillStyle = f.color;
+                        ctx.beginPath();
+                        ctx.arc(sx, sy, f.size || 6, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        if (!f.isEjected) {
+                            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                            ctx.lineWidth = 1;
+                            ctx.stroke();
+                        }
+                    }
                 });
 
-                // Oyuncuları boyuta göre sırala
-                const sortedPlayers = Object.entries(players).sort((a, b) => a[1].size - b[1].size);
+                // Oyuncuları çiz - hücre bazlı
+                Object.entries(players).forEach(([id, p]) => {
+                    if (!p.cells || !Array.isArray(p.cells)) return;
 
-                sortedPlayers.forEach(([id, p]) => {
-                    const sx = p.x - camera.x + canvas.width / 2;
-                    const sy = p.y - camera.y + canvas.height / 2;
+                    // Her hücreyi çiz
+                    p.cells.forEach((cell, idx) => {
+                        const sx = cell.x - camera.x + canvas.width / 2;
+                        const sy = cell.y - camera.y + canvas.height / 2;
 
-                    // Gölge efekti
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = p.color;
-                    
-                    ctx.fillStyle = p.color;
-                    ctx.beginPath();
-                    ctx.arc(sx, sy, p.size, 0, Math.PI * 2);
-                    ctx.fill();
+                        // Sadece görünür hücreleri çiz
+                        const viewPadding = cell.size + 50;
+                        if (sx > -viewPadding && sx < canvas.width + viewPadding &&
+                            sy > -viewPadding && sy < canvas.height + viewPadding) {
 
-                    ctx.shadowBlur = 0;
-                    
-                    // Kenarlık
-                    ctx.strokeStyle = id === myId ? '#fff' : 'rgba(255,255,255,0.3)';
-                    ctx.lineWidth = id === myId ? 4 : 2;
-                    ctx.stroke();
+                            // Gölge efekti
+                            if (cell.size > 30) {
+                                ctx.shadowBlur = 10;
+                                ctx.shadowColor = p.color;
+                            }
 
-                    // İsim ve boyut
-                    const fontSize = Math.max(12, p.size / 3);
-                    ctx.fillStyle = '#fff';
-                    ctx.font = `bold ${fontSize}px Arial`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.strokeStyle = '#000';
-                    ctx.lineWidth = 3;
-                    ctx.strokeText(p.name, sx, sy);
-                    ctx.fillText(p.name, sx, sy);
-                    
-                    ctx.font = `${fontSize * 0.7}px Arial`;
-                    ctx.strokeText(Math.floor(p.size), sx, sy + fontSize);
-                    ctx.fillText(Math.floor(p.size), sx, sy + fontSize);
+                            ctx.fillStyle = p.color;
+                            ctx.beginPath();
+                            ctx.arc(sx, sy, cell.size, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            ctx.shadowBlur = 0;
+
+                            // Kenarlık
+                            ctx.strokeStyle = id === myId ? '#fff' : 'rgba(255,255,255,0.3)';
+                            ctx.lineWidth = id === myId ? 4 : 2;
+                            ctx.stroke();
+
+                            // İsim (sadece en büyük hücrede)
+                            if (idx === 0 && cell.size > 15) {
+                                const fontSize = Math.max(12, cell.size / 3);
+                                ctx.fillStyle = '#fff';
+                                ctx.font = `bold ${fontSize}px Arial`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.strokeStyle = '#000';
+                                ctx.lineWidth = 3;
+                                ctx.strokeText(p.name, sx, sy);
+                                ctx.fillText(p.name, sx, sy);
+
+                                ctx.font = `${fontSize * 0.7}px Arial`;
+                                ctx.strokeText(Math.floor(p.size), sx, sy + fontSize);
+                                ctx.fillText(Math.floor(p.size), sx, sy + fontSize);
+                            }
+                        }
+                    });
                 });
             }
 
@@ -336,4 +484,5 @@
         draw();
     </script>
 </body>
+
 </html>
