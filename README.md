@@ -57,6 +57,3 @@ git push heroku main
 - Vanilla JavaScript
 
 ## 📝 Lisans
-
-MIT
-"# agar"  
